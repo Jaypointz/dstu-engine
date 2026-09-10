@@ -1,4 +1,5 @@
 #include "md.h"
+#include "kupyna_md.h"
 #include "cipher.h"
 #include "rbg.h"
 #include "pmeth.h"
@@ -9,6 +10,7 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/obj_mac.h>
+#include <openssl/objects.h>
 #include <openssl/ossl_typ.h>
 
 #include <string.h>
@@ -16,15 +18,25 @@
 static const char *engine_dstu_id = "dstu";
 static const char *engine_dstu_name = "DSTU engine by Maksym Mamontov";
 
+/* No NID is baked into OpenSSL for Kupyna (DSTU 7564:2014), unlike the other
+ * DSTU algorithms here, so it's registered dynamically at bind time instead.
+ * TODO: confirm these OIDs against the official Ukrainian PKI OID registry -
+ * these are placeholders following the existing OBJ_ua_pki (1.2.804.2.1.1.1)
+ * arc convention and must be verified before relying on them for real
+ * interoperability with any external verifier. */
+#define KUPYNA256_OID "1.2.804.2.1.1.1.1.3.3"
+#define KUPYNA512_OID "1.2.804.2.1.1.1.1.3.4"
 
 static int dstu_nids[] =
 {
     NID_dstu4145le, NID_dstu4145be
 };
-static int digest_nids[] =
+/* Slots 1 and 2 are filled in at bind time if Kupyna NID registration succeeds. */
+static int digest_nids[3] =
 {
-    NID_dstu34311
+    NID_dstu34311, NID_undef, NID_undef
 };
+static size_t digest_nids_count = 1;
 static int cipher_nids[] =
 {
     NID_dstu28147_cfb
@@ -39,11 +51,43 @@ static EVP_CIPHER *dstu_cipher = NULL;
 static EVP_PKEY_METHOD *dstu_pkey_methods[] = {NULL, NULL};
 static EVP_PKEY_ASN1_METHOD *dstu_asn1_methods[] = {NULL, NULL};
 
+static int kupyna256_nid = NID_undef;
+static int kupyna512_nid = NID_undef;
+static EVP_MD *kupyna256_md = NULL;
+static EVP_MD *kupyna512_md = NULL;
+
 static EVP_MD *dstu_md_get()
 {
     if (dstu_md == NULL)
         dstu_md = dstu_digest_new();
     return dstu_md;
+}
+
+static EVP_MD *kupyna256_md_get()
+{
+    if (kupyna256_md == NULL && kupyna256_nid != NID_undef)
+        kupyna256_md = kupyna256_digest_new(kupyna256_nid);
+    return kupyna256_md;
+}
+
+static EVP_MD *kupyna512_md_get()
+{
+    if (kupyna512_md == NULL && kupyna512_nid != NID_undef)
+        kupyna512_md = kupyna512_digest_new(kupyna512_nid);
+    return kupyna512_md;
+}
+
+/* Additive and best-effort: failure here must not break the rest of the
+ * engine, so it's not folded into dstu_bind()'s all-or-nothing chain. */
+static void kupyna_register_nids(void)
+{
+    kupyna256_nid = OBJ_create(KUPYNA256_OID, "kupyna256", "DSTU 7564:2014 Kupyna-256");
+    kupyna512_nid = OBJ_create(KUPYNA512_OID, "kupyna512", "DSTU 7564:2014 Kupyna-512");
+
+    if (kupyna256_nid != NID_undef)
+        digest_nids[digest_nids_count++] = kupyna256_nid;
+    if (kupyna512_nid != NID_undef)
+        digest_nids[digest_nids_count++] = kupyna512_nid;
 }
 
 static EVP_CIPHER *dstu_cipher_get()
@@ -96,6 +140,10 @@ static int dstu_engine_finish(ENGINE *e)
     (void) e; // Unused
     dstu_cipher_free(dstu_cipher);
     dstu_digest_free(dstu_md);
+    if (kupyna256_md)
+        kupyna_digest_free(kupyna256_md);
+    if (kupyna512_md)
+        kupyna_digest_free(kupyna512_md);
 
     ERR_unload_DSTU_strings();
 
@@ -113,15 +161,24 @@ static int dstu_digests(ENGINE *e, const EVP_MD **digest, const int **nids,
             *digest = dstu_md_get();
             return 1;
         }
-        else
-            return 0;
+        if (kupyna256_nid != NID_undef && nid == kupyna256_nid)
+        {
+            *digest = kupyna256_md_get();
+            return 1;
+        }
+        if (kupyna512_nid != NID_undef && nid == kupyna512_nid)
+        {
+            *digest = kupyna512_md_get();
+            return 1;
+        }
+        return 0;
     }
     else
     {
         if (!nids)
             return -1;
         *nids = digest_nids;
-        return 1;
+        return (int) digest_nids_count;
     }
 }
 
@@ -187,6 +244,8 @@ static int dstu_bind(ENGINE *e, const char *id)
     if (id && strcmp(id, engine_dstu_id))
         return 0;
 
+    kupyna_register_nids();
+
     if (!ENGINE_set_id(e, engine_dstu_id) ||
         !ENGINE_set_name(e, engine_dstu_name) ||
         !ENGINE_set_init_function(e, dstu_engine_init) ||
@@ -208,6 +267,11 @@ static int dstu_bind(ENGINE *e, const char *id)
         DSTUerr(DSTU_F_BIND_DSTU, ERR_R_EVP_LIB);
         return 0;
     }
+
+    if (kupyna256_md_get())
+        EVP_add_digest(kupyna256_md_get());
+    if (kupyna512_md_get())
+        EVP_add_digest(kupyna512_md_get());
 
     ERR_load_DSTU_strings();
 

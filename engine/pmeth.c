@@ -157,12 +157,20 @@ static int dstu_pkey_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
             DSTU_KEY_CTX_set(dstu_ctx, group, NULL);
             return 1;
         case EVP_PKEY_CTRL_MD:
-            if (NID_dstu34311 != EVP_MD_type((const EVP_MD *) p2))
+        {
+            /* Accept GOST 34.311 (the original pairing) or Kupyna (DSTU 7564:2014),
+             * looked up by short name since Kupyna has no NID baked into OpenSSL and
+             * is registered dynamically (see kupyna_register_nids in dstu.c). */
+            int md_nid = EVP_MD_type((const EVP_MD *) p2);
+            if (md_nid != NID_dstu34311 &&
+                md_nid != OBJ_sn2nid("kupyna256") &&
+                md_nid != OBJ_sn2nid("kupyna512"))
             {
                 DSTUerr(DSTU_F_DSTU_PKEY_CTRL, DSTU_R_INVALID_DIGEST_TYPE);
                 return 0;
             }
             return 1;
+        }
         case EVP_PKEY_CTRL_PKCS7_ENCRYPT:
         case EVP_PKEY_CTRL_PKCS7_DECRYPT:
         case EVP_PKEY_CTRL_PKCS7_SIGN:

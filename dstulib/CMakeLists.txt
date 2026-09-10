@@ -26,3 +26,5 @@ else(ENABLE_CODECOV AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif(ENABLE_CODECOV AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 
 add_subdirectory(gost)
+add_subdirectory(kupyna)
+
