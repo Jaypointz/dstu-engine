@@ -10,7 +10,7 @@ if("${OPENSSL_ENGINES_DIR}" STREQUAL "")
     endif("${OPENSSL_ENGINES_DIR}" STREQUAL "")
 endif("${OPENSSL_ENGINES_DIR}" STREQUAL "")
 
-add_library(dstu MODULE dstu.c md.c kupyna_md.c cipher.c rbg.c pmeth.c ameth.c sign.c err.c)
+add_library(dstu MODULE dstu.c md.c kupyna_md.c cipher.c kalyna_cipher.c kupyna_pbe.c rbg.c pmeth.c ameth.c sign.c err.c)
 set_target_properties(dstu PROPERTIES PREFIX "")
 target_link_libraries(dstu PUBLIC dstulib coverage_config OpenSSL::Crypto)
 

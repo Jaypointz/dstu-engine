@@ -653,12 +653,12 @@ static int dstu_asn1_pkey_ctrl(EVP_PKEY *pkey, int op, long arg1, void *arg2)
         case ASN1_PKEY_CTRL_PKCS7_SIGN:
             if (arg1 == 0)
             {
-                X509_ALGOR *alg1 = NULL, *alg2 = NULL;
+                X509_ALGOR *alg2 = NULL;
                 int nid = EVP_PKEY_base_id(pkey);
+                /* digestAlgorithm is left untouched - the caller already set it to
+                 * whatever digest was actually configured (dstu34311/kupyna256/512) */
                 PKCS7_SIGNER_INFO_get0_algs((PKCS7_SIGNER_INFO *)arg2,
-                                            NULL, &alg1, &alg2);
-                X509_ALGOR_set0(alg1, OBJ_nid2obj(NID_dstu34311),
-                                V_ASN1_NULL, 0);
+                                            NULL, NULL, &alg2);
                 if (nid == NID_undef)
                     return (-1);
                 X509_ALGOR_set0(alg2, OBJ_nid2obj(nid), V_ASN1_NULL, 0);
@@ -668,12 +668,16 @@ static int dstu_asn1_pkey_ctrl(EVP_PKEY *pkey, int op, long arg1, void *arg2)
         case ASN1_PKEY_CTRL_CMS_SIGN:
             if (arg1 == 0)
             {
-                X509_ALGOR *alg1 = NULL, *alg2 = NULL;
+                X509_ALGOR *alg2 = NULL;
                 int nid = EVP_PKEY_base_id(pkey);
+                /* digestAlgorithm is left untouched - CMS_add1_signer already set it
+                 * to whatever digest was actually passed in (dstu34311/kupyna256/512).
+                 * Overwriting it here to a hardcoded dstu34311 broke CMS_final for any
+                 * other digest: the content-digest chain is keyed by the digest that
+                 * was really used, so a mismatching digestAlgorithm here makes
+                 * ossl_cms_DigestAlgorithm_find_ctx fail to find it. */
                 CMS_SignerInfo_get0_algs((CMS_SignerInfo *)arg2,
-                                         NULL, NULL, &alg1, &alg2);
-                X509_ALGOR_set0(alg1, OBJ_nid2obj(NID_dstu34311),
-                                V_ASN1_NULL, 0);
+                                         NULL, NULL, NULL, &alg2);
                 if (nid == NID_undef)
                     return -1;
                 X509_ALGOR_set0(alg2, OBJ_nid2obj(nid), V_ASN1_NULL, 0);

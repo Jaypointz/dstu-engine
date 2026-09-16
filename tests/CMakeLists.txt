@@ -39,6 +39,14 @@ add_executable(test_kupyna kupyna.cpp)
 target_link_libraries(test_kupyna PUBLIC common coverage_config keylib OpenSSL::Crypto)
 add_test(test_kupyna test_kupyna)
 
+add_executable(test_kalyna kalyna.cpp)
+target_link_libraries(test_kalyna PUBLIC common coverage_config keylib OpenSSL::Crypto)
+add_test(test_kalyna test_kalyna)
+
+add_executable(test_pbes2 pbes2.cpp)
+target_link_libraries(test_pbes2 PUBLIC common coverage_config keylib OpenSSL::Crypto)
+add_test(test_pbes2 test_pbes2)
+
 set_source_files_properties(openssl.cnf PROPERTIES GENERATED TRUE)
 configure_file(openssl.cnf.in openssl.cnf ESCAPE_QUOTES @ONLY)
 configure_file(private1.pem private1.pem COPYONLY)

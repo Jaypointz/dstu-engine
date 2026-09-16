@@ -2,14 +2,14 @@
  * Kupyna hash function (DSTU 7564:2014).
  * Ported from the reference implementation by Ruslan Kiianchuk, Ruslan
  * Mordvinov and Roman Oliynykov: https://github.com/Roman-Oliynykov/Kupyna-reference
- * Round logic, padding formula and output transformation are unchanged;
- * only identifiers/typing were adapted to this project's conventions, and
- * the keyed KMAC construction (not needed for a plain EVP_MD digest) was
- * dropped.
+ * Round logic, padding formula, output transformation and KMAC are
+ * unchanged; only identifiers/typing were adapted to this project's
+ * conventions.
  */
 #include "kupyna.h"
 #include "tables.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define KUPYNA_NR_512 10   /* rounds for 512-bit state */
@@ -271,4 +271,65 @@ void kupyna_hash(kupyna_ctx *ctx, const uint8_t *data, size_t msg_nbits, uint8_t
     kupyna_pad(ctx, data, msg_nbits);
     kupyna_digest(ctx, data);
     kupyna_output_transformation(ctx, hash_code);
+}
+
+int kupyna_kmac(kupyna_ctx *ctx, const uint8_t *key, size_t key_nbytes, size_t digest_nbits, const uint8_t *data, size_t msg_nbits, uint8_t *mac)
+{
+    size_t total_nbytes;
+    uint8_t *input;
+    size_t i = 0;
+    kupyna_ctx kpad;
+    kupyna_ctx mpad;
+
+    /* Reinitialize internal state. */
+    memset(ctx->state, 0, ctx->nbytes);
+    ctx->state[0][0] = (uint8_t)ctx->nbytes;
+
+    if (digest_nbits != 256 && digest_nbits != 384 && digest_nbits != 512)
+        return -1;
+
+    kupyna_init(digest_nbits, &kpad);
+    kupyna_init(digest_nbits, &mpad);
+
+    /* Key is padded at its own (arbitrary) length, same as the message -
+     * not artificially treated as exactly digest_nbits bits, matching real
+     * key.length/password-length independent usage (e.g. as a PBKDF2 PRF). */
+    kupyna_pad(&kpad, key, key_nbytes * 8);
+    kupyna_pad(&mpad, data, msg_nbits);
+
+    total_nbytes = kpad.pad_nbytes + mpad.pad_nbytes + key_nbytes;
+    if (kpad.data_nbytes > 0)
+        total_nbytes += kpad.data_nbytes;
+    if (mpad.data_nbytes > 0)
+        total_nbytes += mpad.data_nbytes;
+
+    input = calloc(total_nbytes, sizeof(uint8_t));
+    if (input == NULL)
+        return -1;
+
+    if (kpad.data_nbytes > 0)
+    {
+        memcpy(input, key, kpad.data_nbytes);
+        i += kpad.data_nbytes;
+    }
+    memcpy(&input[i], kpad.padding, kpad.pad_nbytes);
+    i += kpad.pad_nbytes;
+    if (mpad.data_nbytes > 0)
+    {
+        memcpy(&input[i], data, mpad.data_nbytes);
+        i += mpad.data_nbytes;
+    }
+    memcpy(&input[i], mpad.padding, mpad.pad_nbytes);
+    i += mpad.pad_nbytes;
+    memcpy(&input[i], key, key_nbytes);
+    /* Invert key. */
+    while (i < total_nbytes)
+    {
+        input[i] = (uint8_t)(input[i] ^ 0xFF);
+        ++i;
+    }
+
+    kupyna_hash(ctx, input, total_nbytes * 8, mac);
+    free(input);
+    return 0;
 }
